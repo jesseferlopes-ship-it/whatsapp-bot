@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
-const AGENT_ID = process.env.AGENT_ID;
+const ASSISTANT_ID = process.env.AGENT_ID;
 const ULTRA_INSTANCE = process.env.ULTRAMSG_INSTANCE;
 const ULTRA_TOKEN = process.env.ULTRAMSG_TOKEN;
 
@@ -20,40 +20,44 @@ app.post("/webhook", async (req, res) => {
     const thread = await axios.post(
       "https://api.openai.com/v1/threads",
       {},
-      { headers: { Authorization: `Bearer ${OPENAI_KEY}` } }
+      {
+        headers: {
+          Authorization: `Bearer ${OPENAI_KEY}`,
+          "OpenAI-Beta": "assistants=v2"
+        }
+      }
     );
 
     const threadId = thread.data.id;
 
-    // 2) Adicionar mensagem do usuário à thread
+    // 2) Adicionar mensagem do usuário
     await axios.post(
       `https://api.openai.com/v1/threads/${threadId}/messages`,
       { role: "user", content: message },
       {
         headers: {
           Authorization: `Bearer ${OPENAI_KEY}`,
-          "OpenAI-Beta": "assistants=v1"
+          "OpenAI-Beta": "assistants=v2"
         }
       }
     );
 
-    // 3) Criar um run
+    // 3) Criar o RUN
     const run = await axios.post(
       `https://api.openai.com/v1/threads/${threadId}/runs`,
-      { assistant_id: AGENT_ID },
+      { assistant_id: ASSISTANT_ID },
       {
         headers: {
           Authorization: `Bearer ${OPENAI_KEY}`,
-          "OpenAI-Beta": "assistants=v1"
+          "OpenAI-Beta": "assistants=v2"
         }
       }
     );
 
     const runId = run.data.id;
 
-    // 4) Ficar esperando o run finalizar
+    // 4) Aguardar a finalização do RUN
     let completed = false;
-    let outputText = "";
 
     while (!completed) {
       const status = await axios.get(
@@ -61,7 +65,7 @@ app.post("/webhook", async (req, res) => {
         {
           headers: {
             Authorization: `Bearer ${OPENAI_KEY}`,
-            "OpenAI-Beta": "assistants=v1"
+            "OpenAI-Beta": "assistants=v2"
           }
         }
       );
@@ -73,35 +77,35 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-    // 5) Pegar a resposta final do assistente
+    // 5) Obter mensagens finais
     const msgs = await axios.get(
       `https://api.openai.com/v1/threads/${threadId}/messages`,
       {
         headers: {
           Authorization: `Bearer ${OPENAI_KEY}`,
-          "OpenAI-Beta": "assistants=v1"
+          "OpenAI-Beta": "assistants=v2"
         }
       }
     );
 
-    const messages = msgs.data.data;
-    outputText = messages[0].content[0].text.value;
+    const responses = msgs.data.data;
+    const reply = responses[0].content[0].text.value;
 
-    console.log("🤖 Resposta do assistente:", outputText);
+    console.log("🤖 Resposta:", reply);
 
-    // 6) Enviar mensagem pelo UltraMSG
+    // 6) Enviar resposta para o WhatsApp via UltraMSG
     await axios.post(
       `https://api.ultramsg.com/${ULTRA_INSTANCE}/messages/chat`,
       {
         token: ULTRA_TOKEN,
         to: phone,
-        body: outputText
+        body: reply
       }
     );
 
     res.sendStatus(200);
   } catch (err) {
-    console.error("❌ Erro no assistente:", err?.response?.data || err);
+    console.log("❌ Erro no assistente:", err.response?.data || err);
     res.sendStatus(500);
   }
 });
