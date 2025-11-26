@@ -10,17 +10,14 @@ const AGENT_ID = process.env.AGENT_ID;
 const ULTRA_INSTANCE = process.env.ULTRAMSG_INSTANCE;
 const ULTRA_TOKEN = process.env.ULTRAMSG_TOKEN;
 
-console.log("🟦 AGENT_ID carregado:", AGENT_ID);
+console.log("🟦 Assistente carregado:", AGENT_ID);
 
-// Função para chamar o modelo GPT
-async function callChatModel(model, message) {
-  return axios.post(
-    "https://api.openai.com/v1/chat/completions",
+// Chamada para Assistants API
+async function callAssistant(assistant_id, message) {
+  const run = await axios.post(
+    `https://api.openai.com/v1/assistants/${assistant_id}/runs`,
     {
-      model,
-      messages: [
-        { role: "user", content: message }
-      ]
+      input: message
     },
     {
       headers: {
@@ -29,6 +26,8 @@ async function callChatModel(model, message) {
       }
     }
   );
+
+  return run.data.output_text;
 }
 
 app.post("/webhook", async (req, res) => {
@@ -41,24 +40,16 @@ app.post("/webhook", async (req, res) => {
     let reply;
 
     try {
-      const response = await callChatModel(AGENT_ID, message);
-
-      reply = response.data.choices[0]?.message?.content;
-      console.log("🤖 Resposta modelo principal:", reply);
-    } catch (err) {
-      console.log("⚠️ Erro modelo principal:", err?.response?.data);
-
-      // Tentativa fallback com gpt-4o-mini
-      const fallback = await callChatModel("gpt-4o-mini", message);
-
-      reply = fallback.data.choices[0]?.message?.content;
-      console.log("🔁 Resposta fallback:", reply);
+      reply = await callAssistant(AGENT_ID, message);
+      console.log("🤖 Resposta do assistente:", reply);
+    } catch (e) {
+      console.log("⚠️ Erro no assistente:", e?.response?.data);
+      reply = "Desculpe, estou com dificuldades para responder agora.";
     }
 
-    // Se ainda estiver undefined:
-    if (!reply) reply = "Desculpe, não entendi sua mensagem.";
+    if (!reply) reply = "Desculpe, não consegui entender.";
 
-    // Envia no WhatsApp
+    // Envia para WhatsApp
     await axios.post(
       `https://api.ultramsg.com/${ULTRA_INSTANCE}/messages/chat`,
       {
