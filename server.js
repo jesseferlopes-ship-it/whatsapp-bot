@@ -6,19 +6,28 @@ app.use(express.json());
 
 // Variáveis do Render
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
-const AGENT_ID = process.env.AGENT_ID; // ← modelo configurado no Render
+const AGENT_ID = process.env.AGENT_ID;
 const ULTRA_INSTANCE = process.env.ULTRAMSG_INSTANCE;
 const ULTRA_TOKEN = process.env.ULTRAMSG_TOKEN;
 
-// Log para garantir que o modelo está correto
-console.log("🔍 AGENT_ID carregado:", AGENT_ID);
+console.log("🟦 AGENT_ID carregado:", AGENT_ID);
 
-// Função para chamar a OpenAI
-async function callOpenAI(model, input) {
+// Função para chamar o modelo GPT
+async function callChatModel(model, message) {
   return axios.post(
-    "https://api.openai.com/v1/responses",
-    { model, input },
-    { headers: { Authorization: `Bearer ${OPENAI_KEY}` } }
+    "https://api.openai.com/v1/chat/completions",
+    {
+      model,
+      messages: [
+        { role: "user", content: message }
+      ]
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${OPENAI_KEY}`,
+        "Content-Type": "application/json"
+      }
+    }
   );
 }
 
@@ -32,20 +41,24 @@ app.post("/webhook", async (req, res) => {
     let reply;
 
     try {
-      // Tenta o modelo configurado no Render
-      const openai = await callOpenAI(AGENT_ID, message);
-      reply = openai.data.output_text;
-      console.log("🤖 Resposta do modelo principal:", reply);
-    } catch (err) {
-      console.log("⚠️ Erro com modelo principal:", err?.response?.data);
+      const response = await callChatModel(AGENT_ID, message);
 
-      // Fallback automático se o modelo falhar
-      const fallback = await callOpenAI("gpt-4o-mini", message);
-      reply = fallback.data.output_text;
-      console.log("🔁 Resposta do fallback (gpt-4o-mini):", reply);
+      reply = response.data.choices[0]?.message?.content;
+      console.log("🤖 Resposta modelo principal:", reply);
+    } catch (err) {
+      console.log("⚠️ Erro modelo principal:", err?.response?.data);
+
+      // Tentativa fallback com gpt-4o-mini
+      const fallback = await callChatModel("gpt-4o-mini", message);
+
+      reply = fallback.data.choices[0]?.message?.content;
+      console.log("🔁 Resposta fallback:", reply);
     }
 
-    // Envia resposta no WhatsApp
+    // Se ainda estiver undefined:
+    if (!reply) reply = "Desculpe, não entendi sua mensagem.";
+
+    // Envia no WhatsApp
     await axios.post(
       `https://api.ultramsg.com/${ULTRA_INSTANCE}/messages/chat`,
       {
